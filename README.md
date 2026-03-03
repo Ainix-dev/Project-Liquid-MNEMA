@@ -1,4 +1,4 @@
-# MNEMA
+# PROJECT LIQUID MNEMA
 ### *A mind that remembers*
 
 > Built on LFM2.5-1.2B-Instruct · Frozen base model · Episodic memory with biological decay · LoRA consolidation · Internal monologue
