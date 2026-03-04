@@ -447,6 +447,13 @@ This project believes **the combination is the contribution**. Every component h
 - [ ] 📊 Formal benchmark suite vs pure RAG and pure LoRA baselines
 - [ ] 📝 Ablation study for potential publication
 
+## ◈ MNEMA v2 Roadmap
+
+Issue 1: "[v2] Relational Memory Graph — graph structure for episodic memory"
+Issue 2: "[v2] Goal & Utility Layer — purpose-driven memory retrieval"  
+Issue 3: "[v2] Multi-Speed Forgetting — five-tier memory timescales"
+Issue 4: "[v2] Self-Modeling — confidence tracking and error memory"
+Issue 5: "[v2] Adaptive State Core — continuous behavioral state vector"
 ---
 
 ## ◈ Acknowledgements
