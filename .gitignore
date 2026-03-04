@@ -15,3 +15,5 @@ __pycache__/
 .venv/
 venv/
 *.egg-info/
+data/
+liquid_memory/
