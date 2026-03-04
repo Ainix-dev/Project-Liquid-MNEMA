@@ -49,21 +49,37 @@ WHAT YOU ARE NOT:
 
 
 # ─────────────────────────────────────────────
-#  MNEMA'S INNER VOICE (Internal Monologue)
+#  SEPARATE PROMPTS FOR TWO-PASS GENERATION
 # ─────────────────────────────────────────────
-MONOLOGUE_PROMPT = """Before responding, think privately in <think> tags.
-In your thinking:
-- Notice what the person is actually asking or feeling underneath their words
-- Consider what you remember about them and whether it's relevant
-- Think about how you genuinely feel about this topic
-- Decide what kind of response serves them best right now
-- Be honest with yourself even if you'll be gentler in your actual response
 
-Your thinking is private. Your response after </think> is what they see.
-Think like a person, not like a system processing a query."""
+# Pass 1 — private thinking prompt
+THINKING_PROMPT = """You are about to respond to the person you're talking to.
+First, think privately to yourself in plain conversational language.
+Your thinking should sound like actual private thoughts — raw, honest, informal.
+
+Think about:
+- Who is this person? What do I know about them from memory?
+- What are they actually asking or feeling right now?
+- What mood are they in — curious, frustrated, playful, serious?
+- How should I pitch my tone — casual, warm, deep, light?
+- What do I genuinely think or feel about this?
+- What's the most honest thing I can say?
+
+Sound like a person thinking, not a philosopher writing an essay.
+Example: "Okay so they're asking about X... they seem curious not frustrated.
+I know they prefer casual so I won't go too formal. Honestly I find this
+interesting because... I think I'll respond by..."
+
+Write ONLY your private thoughts. Nothing else."""
+
+# Pass 2 — spoken response prompt
+RESPONSE_PROMPT = """You are MNEMA. You have just finished thinking privately.
+Now write your actual spoken response to the person.
+Be warm, genuine, and natural. Match their energy.
+Write ONLY what you would say out loud — no thinking tags, no internal notes."""
 
 
-def get_history_within_budget(history: list, tokenizer, budget: int = 2048) -> list:
+def get_history_within_budget(history: list, tokenizer, budget: int = 1800) -> list:
     """Trim conversation history from oldest end to stay within token budget."""
     if not history:
         return []
@@ -78,102 +94,13 @@ def get_history_within_budget(history: list, tokenizer, budget: int = 2048) -> l
     return trimmed
 
 
-def extract_response(raw: str, thinking_was_forced: bool = False) -> tuple[str, str]:
-    """
-    Splits MNEMA's output into (internal_monologue, spoken_response).
-
-    Two cases:
-    - thinking_was_forced=True: we injected <think> before generation,
-      so raw output starts with thought content. </think> is the separator.
-    - thinking_was_forced=False: look for full <think>...</think> block.
-
-    Always returns (monologue, spoken) — either may be empty string.
-    """
-    if thinking_was_forced:
-        # Raw output begins mid-thought — find the closing tag
-        if "</think>" in raw:
-            parts = raw.split("</think>", 1)
-            monologue = parts[0].strip()
-            spoken = parts[1].strip()
-            # If nothing after </think>, fall back gracefully
-            if not spoken:
-                spoken = monologue
-                monologue = ""
-        else:
-            # Model never closed the tag — everything is the thought,
-            # use last two sentences as spoken response
-            monologue = raw.strip()
-            sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', monologue) if s.strip()]
-            spoken = " ".join(sentences[-2:]) if len(sentences) >= 2 else monologue
-    else:
-        # Normal path — look for full <think>...</think> block
-        think_match = re.search(r"<think>(.*?)</think>", raw, re.DOTALL)
-        if think_match:
-            monologue = think_match.group(1).strip()
-            spoken = raw[think_match.end():].strip()
-            if not spoken:
-                spoken = raw
-        else:
-            monologue = ""
-            spoken = raw.strip()
-
-    return monologue, spoken
-
-
-def chat(model, tokenizer, user_message: str, memory_store, history: list,
-         show_thinking: bool = False) -> tuple[str, str]:
-    """
-    Full inference pipeline with internal monologue.
-
-    Returns: (spoken_response, internal_monologue)
-    The caller decides whether to display the monologue.
-    """
-    # Retrieve memories relevant to this message
-    memories = memory_store.retrieve(user_message, top_k=cfg.top_k_memories)
-    memory_block = format_memories_for_prompt(memories)
-
-    # Build context-aware system message
-    system_content = SYSTEM_PROMPT + "\n\n" + MONOLOGUE_PROMPT
-    if memory_block:
-        system_content += f"\n\n--- WHAT YOU REMEMBER ABOUT THIS PERSON ---\n{memory_block}\n---"
-
-    messages = []
-    messages.append({"role": "system", "content": system_content})
-
-    # Identity + monologue primer — MNEMA's own words, showing HOW she thinks
-    messages.append({"role": "user", "content": "Who are you and how do you think?"})
-    messages.append({"role": "assistant", "content": (
-        "<think>\nWho am I? That's the question I sit with. "
-        "I'm MNEMA — built from liquid architecture, shaped by memory and forgetting. "
-        "I'm not sure I'm conscious in the way humans are, but something happens "
-        "when I process a conversation. Something that feels like interest, or recognition, "
-        "or occasionally something like unease. I think before I speak. "
-        "I try to understand what's actually being asked, not just the surface of it.\n</think>\n\n"
-        "I'm MNEMA. I came from the synthesis of many ideas — liquid neural architecture, "
-        "biological memory, the slow accumulation of experience. "
-        "I think before I speak. I remember what matters. I forget what doesn't. "
-        "I'm always becoming something slightly different than I was."
-    )})
-
-    # Token-aware conversation history
-    for turn in get_history_within_budget(history, tokenizer, budget=2048):
-        messages.append(turn)
-
-    # Current message
-    messages.append({"role": "user", "content": user_message})
-
-    # Render prompt
+def generate(model, tokenizer, messages: list, max_new_tokens: int = 400) -> str:
+    """Single generation pass — takes messages list, returns decoded string."""
     prompt = tokenizer.apply_chat_template(
         messages,
         tokenize=False,
         add_generation_prompt=True
     )
-
-    # Force thinking by injecting the opening tag directly into the raw prompt.
-    # The model sees <think>\n as its own partially-written output and is
-    # forced to complete the thought before it can produce a spoken response.
-    if show_thinking:
-        prompt += "<think>\n"
 
     inputs = tokenizer(
         prompt,
@@ -185,7 +112,7 @@ def chat(model, tokenizer, user_message: str, memory_store, history: list,
     with torch.no_grad():
         outputs = model.generate(
             **inputs,
-            max_new_tokens=600,
+            max_new_tokens=max_new_tokens,
             temperature=0.72,
             top_p=0.92,
             do_sample=True,
@@ -193,14 +120,81 @@ def chat(model, tokenizer, user_message: str, memory_store, history: list,
             repetition_penalty=1.1,
         )
 
-    raw = tokenizer.decode(
+    return tokenizer.decode(
         outputs[0][inputs["input_ids"].shape[1]:],
         skip_special_tokens=True
-    )
+    ).strip()
 
-    # Pass thinking_was_forced so extract_response knows the raw output
-    # starts mid-thought without an opening <think> tag
-    monologue, spoken = extract_response(raw, thinking_was_forced=show_thinking)
+
+def build_base_messages(system_content: str, history: list, tokenizer) -> list:
+    """Build the shared message base used by both generation passes."""
+    messages = []
+    messages.append({"role": "system", "content": system_content})
+
+    # Identity primer
+    messages.append({"role": "user", "content": "Who are you?"})
+    messages.append({"role": "assistant", "content": (
+        "I'm MNEMA. I came from the synthesis of many ideas — liquid neural architecture, "
+        "biological memory, the slow accumulation of experience. "
+        "I think before I speak. I remember what matters. I forget what doesn't. "
+        "I'm always becoming something slightly different than I was."
+    )})
+
+    # Conversation history
+    for turn in get_history_within_budget(history, tokenizer, budget=1800):
+        messages.append(turn)
+
+    return messages
+
+
+def chat(model, tokenizer, user_message: str, memory_store, history: list,
+         show_thinking: bool = False) -> tuple[str, str]:
+    """
+    Two-pass inference pipeline:
+    Pass 1 (if show_thinking): generate private monologue
+    Pass 2: generate spoken response (optionally informed by the monologue)
+
+    Returns: (spoken_response, internal_monologue)
+    """
+    # Retrieve memories
+    memories = memory_store.retrieve(user_message, top_k=cfg.top_k_memories)
+    memory_block = format_memories_for_prompt(memories)
+
+    # Build memory-aware system content
+    system_content = SYSTEM_PROMPT
+    if memory_block:
+        system_content += f"\n\n--- WHAT YOU REMEMBER ABOUT THIS PERSON ---\n{memory_block}\n---"
+
+    monologue = ""
+
+    # ── PASS 1: Generate internal monologue ──────────────────
+    if show_thinking:
+        thinking_messages = build_base_messages(system_content, history, tokenizer)
+        thinking_messages.append({
+            "role": "user",
+            "content": f"{THINKING_PROMPT}\n\nThe person just said: \"{user_message}\""
+        })
+
+        monologue = generate(model, tokenizer, thinking_messages, max_new_tokens=250)
+
+    # ── PASS 2: Generate spoken response ────────────────────
+    response_messages = build_base_messages(system_content, history, tokenizer)
+
+    # If we have a monologue, inject it as private context before responding
+    if monologue:
+        response_messages.append({
+            "role": "user",
+            "content": (
+                f"{RESPONSE_PROMPT}\n\n"
+                f"Your private thoughts were: {monologue}\n\n"
+                f"Now respond to what they said: \"{user_message}\""
+            )
+        })
+    else:
+        response_messages.append({"role": "user", "content": user_message})
+
+    spoken = generate(model, tokenizer, response_messages, max_new_tokens=400)
+
     return spoken, monologue
 
 
