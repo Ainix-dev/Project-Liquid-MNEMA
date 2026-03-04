@@ -1,0 +1,15 @@
+cat > requirements.txt << 'EOF'
+torch>=2.5.0
+transformers>=4.55.0
+peft>=0.12.0
+accelerate>=0.34.0
+bitsandbytes>=0.43.0
+chromadb>=0.5.5
+sentence-transformers>=3.0.0
+apscheduler>=3.10.4
+sqlalchemy>=2.0.0
+numpy
+scipy
+python-dotenv
+huggingface_hub
+EOF
