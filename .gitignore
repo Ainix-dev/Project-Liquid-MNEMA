@@ -17,3 +17,6 @@ venv/
 *.egg-info/
 data/
 liquid_memory/
+layer_inspect.py
+layer_names.txt
+test_load.py
