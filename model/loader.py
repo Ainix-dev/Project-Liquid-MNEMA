@@ -43,8 +43,13 @@ def load_model_and_tokenizer():
     for param in base_model.parameters():
         param.requires_grad = False
 
-    if cfg.load_in_4bit:
-        base_model = prepare_model_for_kbit_training(base_model)
+    # Freeze ALL base model parameters
+    for param in base_model.parameters():
+        param.requires_grad = False
+
+    # Enable gradient checkpointing manually — does NOT unfreeze anything
+    base_model.gradient_checkpointing_enable()
+    base_model.enable_input_require_grads()   # required for checkpointing with LoRA
 
     # --- Attach LoRA adapter ---
     if os.path.exists(cfg.adapter_path):
@@ -61,6 +66,7 @@ def load_model_and_tokenizer():
             r=cfg.lora_r,
             lora_alpha=cfg.lora_alpha,
             target_modules=cfg.lora_target_modules,
+            layers_to_transform=cfg.lora_layers_to_transform,   # ADD THIS
             lora_dropout=cfg.lora_dropout,
             bias="none",
         )

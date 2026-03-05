@@ -46,4 +46,8 @@ class Config:
         "out_proj",  # attention output (LFM2.5 uses out_proj NOT o_proj)
     ])
 
+    lora_layers_to_transform: list = field(default_factory=lambda: [
+        2, 5, 8, 10, 12, 14   # attention layers only — skips all conv layers
+    ])
+
 cfg = Config()
