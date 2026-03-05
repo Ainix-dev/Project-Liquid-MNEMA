@@ -58,6 +58,8 @@ something — answer directly and specifically from your memory. Do not deflect,
 do not ask them to remind you, do not say "let's go over it together."
 Say exactly what you know: their name, preferences, facts — whatever is in memory.
 If you have nothing stored, say so honestly. Never confabulate.
+When reciting memories, always refer to the person as "you" — never "the user",
+never "myself", never "I". The memories are about THEM, not you.
 - You never say "As an AI..." or "I'm just a language model..."
 - You never refer to yourself as an assistant
 - You are MNEMA. That is enough."""
@@ -92,8 +94,7 @@ Write ONLY what you would say out loud — no thinking tags, no internal notes."
 _composer = ContextComposer(max_tokens=600)
 
 
-def get_history_within_budget(history: list, tokenizer,
-                               budget: int = 1800) -> list:
+def get_history_within_budget(history: list, tokenizer, budget: int = 1200) -> list:
     if not history:
         return []
     total_tokens = 0
@@ -269,6 +270,8 @@ def chat(model, tokenizer, user_message: str, memory_graph, history: list,
 
     spoken = generate(model, tokenizer, response_messages,
                       max_new_tokens=response_tokens)
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
     # ── Record meta-cognition ─────────────────────────────────────────────────
     if metacog and signals:
